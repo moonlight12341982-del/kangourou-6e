@@ -11,7 +11,7 @@ except Exception:
     HAS_MPL = False
 
 # ---------- CONFIG (UNE SEULE FOIS) ----------
-st.set_page_config(page_title="Kangourou 6e — Agent IA", page_icon="🦘", layout="centered")
+st.set_page_config(page_title="Kangourou 6e — Bonjour CAMILLE", page_icon="🦘", layout="centered")
 
 LABELS = ["A", "B", "C", "D", "E"]
 SERIE_LEN = 10
