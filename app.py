@@ -1,6 +1,5 @@
 import random
 import time
-import traceback
 import streamlit as st
 
 # matplotlib est optionnel : si absent, l'app marche sans images
@@ -11,9 +10,7 @@ try:
 except Exception:
     HAS_MPL = False
 
-# ----------------------------
-# CONFIG (UNE SEULE FOIS)
-# ----------------------------
+# ---------- CONFIG (UNE SEULE FOIS) ----------
 st.set_page_config(page_title="Kangourou 6e — Agent IA", page_icon="🦘", layout="centered")
 
 LABELS = ["A", "B", "C", "D", "E"]
@@ -21,24 +18,7 @@ SERIE_LEN = 10
 DURATION_SEC = 20 * 60
 BANK_SIZE = 50
 
-# ----------------------------
-# Debug toggle
-# ----------------------------
-with st.sidebar:
-    st.header("Options")
-    DEBUG = st.toggle("Mode debug (afficher erreurs)", value=True)
-    st.write("Matplotlib:", "OK ✅" if HAS_MPL else "ABSENT ⚠️ (pas d'images)")
-
-st.title("🦘 Kangourou 6e — Agent IA (Série + Banque + Annales)")
-
-def show_error(e: Exception):
-    st.error("L'app a rencontré une erreur.")
-    if DEBUG:
-        st.code("".join(traceback.format_exception(type(e), e, e.__traceback__)))
-
-# ----------------------------
-# Helpers
-# ----------------------------
+# ---------- HELPERS ----------
 def make_mcq(correct: str, wrongs: list[str], n: int = 5):
     pool = [w for w in wrongs if w != correct]
     pool = list(dict.fromkeys(pool))
@@ -59,9 +39,7 @@ def fig_base():
     ax.axis("off")
     return fig, ax
 
-# ----------------------------
-# Exercices
-# ----------------------------
+# ---------- EXERCICES ----------
 def ex_div_by_3():
     def make_div3():
         x = random.randint(100, 999)
@@ -79,7 +57,6 @@ def ex_div_by_3():
     random.shuffle(choices_nums)
     choices = [str(x) for x in choices_nums]
     ans = choices_nums.index(correct)
-
     explanation = f"Divisible par 3 ⇔ somme des chiffres multiple de 3. Pour {correct} : somme = {sum(map(int, str(correct)))}."
     return {"topic": "Divisibilité", "question": "Quel nombre est divisible par 3 ?", "choices": choices, "answer_index": ans, "explanation": explanation}
 
@@ -87,7 +64,12 @@ def ex_fraction_bar_model():
     denom = random.choice([6, 8, 10, 12, 14])
     num = random.randint(1, denom - 1)
     correct = f"{num}/{denom}"
-    wrongs = [f"{denom}/{num}", "1/2", "2/3", "3/4", "1", f"{max(1, num-1)}/{denom}", f"{min(denom-1, num+1)}/{denom}"]
+    wrongs = [
+        f"{denom}/{num}",
+        "1/2", "2/3", "3/4", "1",
+        f"{max(1, num-1)}/{denom}",
+        f"{min(denom-1, num+1)}/{denom}",
+    ]
     choices, ans = make_mcq(correct, wrongs, 5)
 
     def draw(ax):
@@ -144,9 +126,9 @@ def new_exercise():
 def make_bank(n=BANK_SIZE):
     return [new_exercise() for _ in range(n)]
 
-# ----------------------------
-# State init
-# ----------------------------
+# ---------- STATE INIT ----------
+if "page" not in st.session_state:
+    st.session_state.page = "🎮 Série"
 if "game_started" not in st.session_state:
     st.session_state.game_started = False
 if "start_time" not in st.session_state:
@@ -157,8 +139,6 @@ if "score" not in st.session_state:
     st.session_state.score = 0
 if "answered" not in st.session_state:
     st.session_state.answered = False
-if "selected" not in st.session_state:
-    st.session_state.selected = None
 if "finished" not in st.session_state:
     st.session_state.finished = False
 if "exercise" not in st.session_state:
@@ -173,72 +153,138 @@ def remaining_seconds():
         return DURATION_SEC
     return max(0, int(DURATION_SEC - (time.time() - st.session_state.start_time)))
 
-# ----------------------------
-# Tabs (toujours visibles)
-# ----------------------------
-tab1, tab2, tab3 = st.tabs(["🎮 Série", "📚 Banque (50)", "🗂️ Annales"])
+def reset_series():
+    st.session_state.game_started = False
+    st.session_state.start_time = None
+    st.session_state.question_idx = 0
+    st.session_state.score = 0
+    st.session_state.answered = False
+    st.session_state.finished = False
+    st.session_state.last_feedback = None
+    st.session_state.exercise = new_exercise()
 
-# ============================================================
-# TAB 1: Série
-# ============================================================
-with tab1:
-    try:
-        r = remaining_seconds()
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Progression", f"{min(st.session_state.question_idx, SERIE_LEN)}/{SERIE_LEN}")
-        c2.metric("Score", str(st.session_state.score))
-        c3.metric("Temps", f"{r//60:02d}:{r%60:02d}")
+# ---------- UI ----------
+st.title("🦘 Kangourou 6e — Agent IA")
 
-        st.divider()
+with st.sidebar:
+    st.write("Navigation")
+    page = st.radio("Menu", ["🎮 Série", "📚 Banque (50)", "🗂️ Annales"], index=0)
+    st.write("Matplotlib:", "OK ✅" if HAS_MPL else "Non (pas d'images) ⚠️")
 
-        if not st.session_state.game_started:
-            st.subheader("Démarrer la série")
-            if st.button("▶️ Démarrer (20 min / 10 questions)"):
-                st.session_state.game_started = True
-                st.session_state.start_time = time.time()
-                st.session_state.finished = False
-                st.session_state.question_idx = 0
-                st.session_state.score = 0
-                st.session_state.exercise = new_exercise()
-                st.session_state.answered = False
-                st.session_state.last_feedback = None
-                st.rerun()
+# ===== PAGE: SERIE =====
+if page == "🎮 Série":
+    st.subheader("Série (10 questions) — Chrono 20 min")
+    r = remaining_seconds()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Progression", f"{min(st.session_state.question_idx, SERIE_LEN)}/{SERIE_LEN}")
+    c2.metric("Score", str(st.session_state.score))
+    c3.metric("Temps", f"{r//60:02d}:{r%60:02d}")
+    st.divider()
+
+    if not st.session_state.game_started:
+        st.write("Clique **Démarrer** pour lancer la série.")
+        if st.button("▶️ Démarrer"):
+            reset_series()
+            st.session_state.game_started = True
+            st.session_state.start_time = time.time()
+            st.rerun()
+    else:
+        if r <= 0 or st.session_state.question_idx >= SERIE_LEN:
+            st.session_state.finished = True
+
+        if st.session_state.finished:
+            done = min(st.session_state.question_idx, SERIE_LEN)
+            st.success(f"🏁 Terminé — Score : {st.session_state.score}/{done}")
+            colA, colB = st.columns(2)
+            with colA:
+                if st.button("🔁 Rejouer"):
+                    reset_series()
+                    st.rerun()
+            with colB:
+                if st.button("🧹 Reset"):
+                    reset_series()
+                    st.rerun()
         else:
-            # Fin conditions
-            if r <= 0 or st.session_state.question_idx >= SERIE_LEN:
-                st.session_state.finished = True
+            ex = st.session_state.exercise
+            st.write(f"### Question {st.session_state.question_idx + 1}")
+            st.write(ex["question"])
 
-            if st.session_state.finished:
-                done = min(st.session_state.question_idx, SERIE_LEN)
-                st.success(f"🏁 Terminé — Score : {st.session_state.score}/{done}")
-                colA, colB = st.columns(2)
-                with colA:
-                    if st.button("🔁 Rejouer"):
-                        st.session_state.game_started = False
-                        st.session_state.start_time = None
-                        st.session_state.question_idx = 0
-                        st.session_state.score = 0
+            if HAS_MPL and "draw" in ex:
+                fig, ax = fig_base()
+                ex["draw"](ax)
+                st.pyplot(fig, clear_figure=True)
+
+            st.markdown("**Propositions :**")
+            for i, choice in enumerate(ex["choices"]):
+                st.write(f"- **{LABELS[i]}** : {choice}")
+
+            st.write("**Répondre :**")
+            cols = st.columns(5)
+            for i in range(5):
+                with cols[i]:
+                    if st.button(LABELS[i], key=f"ans_{ex['id']}_{i}", disabled=st.session_state.answered, use_container_width=True):
+                        st.session_state.answered = True
+                        correct_i = ex["answer_index"]
+                        if i == correct_i:
+                            st.session_state.score += 1
+                            st.session_state.last_feedback = ("ok", "✅ Bonne réponse")
+                        else:
+                            st.session_state.last_feedback = ("ko", f"❌ Faux (bonne réponse : {LABELS[correct_i]})")
+                        st.rerun()
+
+            if st.session_state.answered:
+                kind, msg = st.session_state.last_feedback
+                (st.success if kind == "ok" else st.error)(msg)
+
+                correct_i = ex["answer_index"]
+                st.info(f"Réponse : **{LABELS[correct_i]}** — {ex['choices'][correct_i]}")
+                with st.expander("Correction", expanded=True):
+                    st.write(ex["explanation"])
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("➡️ Suivant"):
+                        st.session_state.question_idx += 1
                         st.session_state.exercise = new_exercise()
                         st.session_state.answered = False
-                        st.session_state.finished = False
                         st.session_state.last_feedback = None
                         st.rerun()
-                with colB:
-                    if st.button("🧹 Reset"):
-                        st.session_state.game_started = False
-                        st.session_state.start_time = None
-                        st.session_state.question_idx = 0
-                        st.session_state.score = 0
-                        st.session_state.exercise = new_exercise()
+                with col2:
+                    if st.button("🔁 Refaire (sans compter)"):
                         st.session_state.answered = False
-                        st.session_state.finished = False
                         st.session_state.last_feedback = None
                         st.rerun()
-            else:
-                ex = st.session_state.exercise
-                st.subheader(f"Question {st.session_state.question_idx + 1}")
+                with col3:
+                    if st.button("🧹 Reset série"):
+                        reset_series()
+                        st.rerun()
+
+# ===== PAGE: BANQUE =====
+elif page == "📚 Banque (50)":
+    st.subheader("Banque (50) — exercices + corrigés")
+    st.write("Banque générée une fois, puis figée (tu peux régénérer).")
+    colA, colB = st.columns([1, 1])
+    with colA:
+        if st.button("🔄 Régénérer la banque"):
+            st.session_state.bank = make_bank(BANK_SIZE)
+            st.rerun()
+    with colB:
+        show_solutions = st.toggle("Afficher les corrigés", value=False)
+
+    st.divider()
+
+    topics = {}
+    for ex in st.session_state.bank:
+        topics.setdefault(ex.get("topic", "Autres"), []).append(ex)
+
+    for topic, exos in topics.items():
+        st.write(f"### 📌 {topic}")
+        for idx, ex in enumerate(exos, start=1):
+            title = ex["question"]
+            if len(title) > 70:
+                title = title[:70] + "…"
+            with st.expander(f"Exercice {idx} — {title}"):
                 st.write(ex["question"])
-
                 if HAS_MPL and "draw" in ex:
                     fig, ax = fig_base()
                     ex["draw"](ax)
@@ -248,106 +294,15 @@ with tab1:
                 for i, choice in enumerate(ex["choices"]):
                     st.write(f"- **{LABELS[i]}** : {choice}")
 
-                st.write("**Répondre :**")
-                cols = st.columns(5)
-                for i in range(5):
-                    with cols[i]:
-                        if st.button(LABELS[i], key=f"ans_{ex['id']}_{i}", disabled=st.session_state.answered, use_container_width=True):
-                            st.session_state.selected = i
-                            st.session_state.answered = True
-                            correct_i = ex["answer_index"]
-                            if i == correct_i:
-                                st.session_state.score += 1
-                                st.session_state.last_feedback = ("ok", "✅ Bonne réponse")
-                            else:
-                                st.session_state.last_feedback = ("ko", f"❌ Faux (bonne réponse: {LABELS[correct_i]})")
-                            st.rerun()
+                if show_solutions:
+                    ci = ex["answer_index"]
+                    st.success(f"✅ Réponse : {LABELS[ci]} — {ex['choices'][ci]}")
+                    st.write(ex["explanation"])
 
-                if st.session_state.answered:
-                    kind, msg = st.session_state.last_feedback
-                    (st.success if kind == "ok" else st.error)(msg)
-                    correct_i = ex["answer_index"]
-                    st.info(f"Réponse : **{LABELS[correct_i]}** — {ex['choices'][correct_i]}")
-                    with st.expander("Correction", expanded=True):
-                        st.write(ex["explanation"])
-
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        if st.button("🔁 Refaire (sans compter)"):
-                            st.session_state.answered = False
-                            st.session_state.last_feedback = None
-                            st.rerun()
-                    with col2:
-                        if st.button("➡️ Suivant"):
-                            st.session_state.question_idx += 1
-                            st.session_state.exercise = new_exercise()
-                            st.session_state.answered = False
-                            st.session_state.last_feedback = None
-                            st.rerun()
-                    with col3:
-                        if st.button("🧹 Reset série"):
-                            st.session_state.game_started = False
-                            st.session_state.start_time = None
-                            st.session_state.question_idx = 0
-                            st.session_state.score = 0
-                            st.session_state.exercise = new_exercise()
-                            st.session_state.answered = False
-                            st.session_state.finished = False
-                            st.session_state.last_feedback = None
-                            st.rerun()
-
-    except Exception as e:
-        show_error(e)
-
-# ============================================================
-# TAB 2: Banque
-# ============================================================
-with tab2:
-    try:
-        st.write("Banque de **50** exercices (générés une fois, puis figés).")
-        colA, colB = st.columns([1, 1])
-        with colA:
-            if st.button("🔄 Régénérer la banque (50)"):
-                st.session_state.bank = make_bank(BANK_SIZE)
-                st.rerun()
-        with colB:
-            show_solutions = st.toggle("Afficher les corrigés", value=False)
-
-        st.divider()
-
-        topics = {}
-        for ex in st.session_state.bank:
-            topics.setdefault(ex.get("topic", "Autres"), []).append(ex)
-
-        for topic, exos in topics.items():
-            st.subheader(f"📌 {topic}")
-            for idx, ex in enumerate(exos, start=1):
-                title = ex["question"]
-                if len(title) > 70:
-                    title = title[:70] + "…"
-                with st.expander(f"Exercice {idx} — {title}"):
-                    st.write(ex["question"])
-                    if HAS_MPL and "draw" in ex:
-                        fig, ax = fig_base()
-                        ex["draw"](ax)
-                        st.pyplot(fig, clear_figure=True)
-
-                    st.markdown("**Propositions :**")
-                    for i, choice in enumerate(ex["choices"]):
-                        st.write(f"- **{LABELS[i]}** : {choice}")
-
-                    if show_solutions:
-                        ci = ex["answer_index"]
-                        st.success(f"✅ Réponse : {LABELS[ci]} — {ex['choices'][ci]}")
-                        st.write(ex["explanation"])
-    except Exception as e:
-        show_error(e)
-
-# ============================================================
-# TAB 3: Annales
-# ============================================================
-with tab3:
-    st.write("Liens officiels (ACL / Kangourou) : cherche le **Sujet B (6e–5e)**.")
+# ===== PAGE: ANNALES =====
+else:
+    st.subheader("Annales officielles (liens)")
+    st.write("Liens officiels ACL / Kangourou (mathkang.org). Pour 6e, viser en général le **Sujet B (6e–5e)**.")
     st.markdown("""
 - 2025 : https://www.mathkang.org/concours/sujsol2025.html  
 - 2024 : https://www.mathkang.org/concours/sujsol2024.html  
@@ -356,7 +311,7 @@ with tab3:
 - 2021 : https://www.mathkang.org/concours/sujsol2021.html  
 - 2020 : https://www.mathkang.org/concours/sujsol2020.html  
 
-- Base Exos-Kangourou : https://www.mathkang.org/ExosKangourou/default.htm  
+- Exos-Kangourou : https://www.mathkang.org/ExosKangourou/default.htm  
 - Catalogue annales : https://www.mathkang.org/catalogue/annales.html  
 - Menu concours : https://www.mathkang.org/concours/  
 """)
