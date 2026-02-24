@@ -1,202 +1,284 @@
 import random
 import time
+import math
 import streamlit as st
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Polygon, FancyArrowPatch
 
 # ============================================================
-# Config
+# Utilitaires
 # ============================================================
 
 LABELS = ["A", "B", "C", "D", "E"]
-SERIE_LEN = 10
-DURATION_SEC = 20 * 60  # 20 min
 
-# ============================================================
-# Outils QCM
-# ============================================================
+def pick_unique(nums, k, avoid=None):
+    avoid = set() if avoid is None else set(avoid)
+    out = []
+    for x in nums:
+        if x not in avoid and x not in out:
+            out.append(x)
+        if len(out) >= k:
+            break
+    return out
 
 def make_mcq(correct, wrongs, n=5):
+    """
+    correct: str
+    wrongs: list[str]
+    returns (choices, answer_idx)
+    """
     pool = [w for w in wrongs if w != correct]
-    pool = list(dict.fromkeys(pool))
-    while len(pool) < n - 1:
-        pool.append(random.choice(wrongs))
-        pool = list(dict.fromkeys(pool))
-        if len(pool) > 50:
-            break
+    # garantis assez de propositions
+    while len(pool) < (n - 1):
+        pool.append(random.choice(wrongs) + " ")  # fallback léger (rare)
+        pool = list(dict.fromkeys(pool))  # unique preserve order
+
     choices = [correct] + random.sample(pool, n - 1)
     random.shuffle(choices)
     return choices, choices.index(correct)
 
-def fig_base():
-    fig, ax = plt.subplots()
-    ax.set_aspect("equal", adjustable="box")
-    ax.axis("off")
-    return fig, ax
+def gcd(a, b):
+    while b:
+        a, b = b, a % b
+    return abs(a)
 
 # ============================================================
-# EXERCICES (images + problèmes un peu plus corsés)
-# Chaque ex: question, choices(5), answer_index, explanation, draw(optional), topic(optional)
+# Générateurs “Kangourou 6e” (QCM 5 choix)
+# Chaque exo renvoie dict: question, choices(5), answer_index, explanation
 # ============================================================
 
-def ex_grid_area_missing():
-    w = random.randint(6, 10)
-    h = random.randint(4, 8)
-    hole_w = random.randint(1, max(1, w // 3))
-    hole_h = random.randint(1, max(1, h // 3))
-    hx = random.randint(1, w - hole_w - 1) if w - hole_w - 1 >= 1 else 0
-    hy = random.randint(1, h - hole_h - 1) if h - hole_h - 1 >= 1 else 0
-    total = w * h
-    hole = hole_w * hole_h
-    correct = total - hole
+def ex_trap_addition():
+    # "piège" avec compensation : 49 + 38, 59 + 27 etc.
+    a = random.choice([39, 49, 59, 69, 79])
+    b = random.randint(21, 48)
+    correct = a + b
+    # distractors typiques
+    wrongs = [
+        str(correct + 1),
+        str(correct - 1),
+        str(correct + 10),
+        str(correct - 10),
+        str((a + 1) + (b - 1)),  # même résultat -> éviter, mais c'est correct; on le met pas
+        str((a - 1) + (b + 1)),  # idem
+        str(a + (b + 2)),
+        str((a - 2) + b),
+    ]
+    # Nettoyage
+    wrongs = [w for w in wrongs if w != str(correct)]
+    correct_s = str(correct)
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = (
+        f"Astuce de compensation : {a} est proche de {a+1}.\n"
+        f"{a} + {b} = ({a}+1) + ({b}-1) = {a+1} + {b-1} = {correct}."
+    )
+    return {"question": f"Calcule : {a} + {b}", "choices": choices, "answer_index": ans, "explanation": explanation}
+
+def ex_logic_odd_even():
+    # logique parité
+    a = random.randint(10, 99)
+    b = random.randint(10, 99)
+    # question: (a+b) est pair/impair ?
+    correct = "pair" if (a + b) % 2 == 0 else "impair"
+    wrongs = ["pair", "impair", "multiple de 3", "multiple de 5", "premier"]
+    # Choix texte (Kangourou aime ça)
+    # On veut 5 choix dont pair/impair toujours présents
+    options = ["pair", "impair", "multiple de 3", "multiple de 5", "premier"]
+    choices = options[:]  # déjà 5
+    ans = choices.index(correct)
+
+    explanation = (
+        f"{a} est {'pair' if a%2==0 else 'impair'} et {b} est {'pair' if b%2==0 else 'impair'}.\n"
+        "Règle : pair+pair=pair, impair+impair=pair, pair+impair=impair.\n"
+        f"Donc {a}+{b} est {correct}."
+    )
+    return {
+        "question": f"{a} + {b} est un nombre :",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_fraction_of_number():
+    denom = random.choice([2, 3, 4, 5, 6, 8, 10, 12])
+    num = random.randint(1, denom - 1)
+    k = random.randint(2, 12)
+    total = denom * k
+    correct = num * k
 
     correct_s = str(correct)
     wrongs = [
-        str(total), str(hole), str(total + hole),
-        str((w + h) * 2),  # piège périmètre
-        str(correct + 1), str(max(0, correct - 1)),
+        str(total - correct),
+        str(num * denom),
+        str(k + num),
+        str(k * denom),
+        str(correct + k),
+        str(max(0, correct - k)),
+        str(correct + 1),
     ]
+    wrongs = [w for w in wrongs if w != correct_s]
     choices, ans = make_mcq(correct_s, wrongs, 5)
 
-    def draw(ax):
-        for i in range(w + 1):
-            ax.plot([i, i], [0, h], linewidth=1)
-        for j in range(h + 1):
-            ax.plot([0, w], [j, j], linewidth=1)
-        ax.add_patch(Rectangle((hx, hy), hole_w, hole_h, facecolor="white", edgecolor="black", linewidth=2))
-        ax.set_xlim(-0.5, w + 0.5)
-        ax.set_ylim(-0.5, h + 0.5)
-        ax.set_title("Chaque petit carré vaut 1 unité d'aire", fontsize=11)
-
     explanation = (
-        f"Aire totale = {w} × {h} = {total}.\n"
-        f"Aire du trou = {hole_w} × {hole_h} = {hole}.\n"
-        f"Aire grisée = {total} − {hole} = {correct}."
+        f"Pour calculer {num}/{denom} de {total} :\n"
+        f"1) {total} ÷ {denom} = {k}\n"
+        f"2) {k} × {num} = {correct}"
     )
-
     return {
-        "topic": "Aire / grille",
-        "question": "On a un grand rectangle pavé de petits carrés de côté 1. Un petit rectangle blanc est “enlevé”. Quelle est l’aire grisée ?",
+        "question": f"Quelle est la valeur de {num}/{denom} de {total} ?",
         "choices": choices,
         "answer_index": ans,
-        "explanation": explanation,
-        "draw": draw,
+        "explanation": explanation
     }
 
-def ex_triangle_angle_with_extension():
+def ex_conversion_cm_mm():
+    # conversion piège
+    cm = random.randint(12, 190)
+    correct = cm * 10  # mm
+    correct_s = f"{correct} mm"
+    wrongs = [
+        f"{cm} mm",
+        f"{cm*100} mm",
+        f"{cm//10} mm",
+        f"{cm*10 + 1} mm",
+        f"{max(0, cm*10 - 10)} mm",
+        f"{cm} cm",  # mauvais unité
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = f"1 cm = 10 mm, donc {cm} cm = {cm} × 10 = {correct} mm."
+    return {
+        "question": f"Convertis : {cm} cm en millimètres (mm).",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_time_trap():
+    # heure + minutes avec passage d'heure
+    h = random.randint(8, 18)
+    m = random.choice([35, 40, 45, 50, 55])
+    add = random.choice([10, 15, 20, 25, 30, 35])
+    start = h * 60 + m
+    end = start + add
+    hh = (end // 60) % 24
+    mm = end % 60
+    correct_s = f"{hh:02d} h {mm:02d}"
+
+    # distractors
+    wrongs = [
+        f"{h:02d} h {min(59, m+add):02d}",
+        f"{(h+1):02d} h {m:02d}",
+        f"{hh:02d} h {((mm+5)%60):02d}",
+        f"{hh:02d} h {((mm+10)%60):02d}",
+        f"{(hh-1)%24:02d} h {mm:02d}",
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = (
+        f"On ajoute {add} minutes à {h:02d} h {m:02d}.\n"
+        f"En minutes : {h*60+m} + {add} = {end} minutes.\n"
+        f"Donc {hh:02d} h {mm:02d}."
+    )
+    return {
+        "question": f"Il est {h:02d} h {m:02d}. Quelle heure sera-t-il dans {add} minutes ?",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_angles_triangle():
+    # somme angles triangle = 180
     a = random.randint(30, 80)
-    b = random.randint(20, 70)
-    while a + b >= 170:
-        b = random.randint(20, 70)
+    b = random.randint(30, 80)
+    # assurer a+b<180
+    if a + b >= 170:
+        b = 160 - a
     c = 180 - (a + b)
-    ext = a + b
-    correct_s = f"{ext}°"
-    wrongs = [f"{c}°", f"{180 - a}°", f"{180 - b}°", f"{a}°", f"{b}°", f"{ext + 10}°"]
+    correct_s = f"{c}°"
+
+    wrongs = [
+        f"{180 - a}°",
+        f"{180 - b}°",
+        f"{a + b}°",
+        f"{a}°",
+        f"{b}°",
+        f"{c + 10}°",
+        f"{max(0, c - 10)}°",
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
     choices, ans = make_mcq(correct_s, wrongs, 5)
 
-    def draw(ax):
-        P, Q, R = (0, 0), (4, 0), (1.2, 2.8)
-        ax.add_patch(Polygon([P, Q, R], closed=True, fill=False, linewidth=2))
-        ax.plot([4, 5.5], [0, 0], linewidth=2)
-        ax.text(0.1, -0.35, f"{a}°", fontsize=12)
-        ax.text(3.2, 0.25, f"{b}°", fontsize=12)
-        ax.text(4.6, 0.25, "x°", fontsize=12)
-        ax.set_xlim(-0.8, 6.0)
-        ax.set_ylim(-1.0, 4.0)
-        ax.set_title("Angle extérieur (x) au prolongement", fontsize=11)
-
     explanation = (
-        "Dans un triangle, somme = 180°.\n"
-        f"Angle intérieur au sommet = 180° − ({a}° + {b}°) = {c}°.\n"
-        f"Angle extérieur x = 180° − {c}° = {ext}° (donc x = {a}° + {b}°)."
+        "Dans un triangle, la somme des angles vaut 180°.\n"
+        f"Donc angle manquant = 180° - ({a}° + {b}°) = {c}°."
     )
-
     return {
-        "topic": "Angles",
-        "question": f"Sur la figure, les angles à la base valent {a}° et {b}°. Quelle est la mesure de l’angle extérieur x ?",
+        "question": f"Dans un triangle, deux angles mesurent {a}° et {b}°. Combien mesure le troisième angle ?",
         "choices": choices,
         "answer_index": ans,
-        "explanation": explanation,
-        "draw": draw,
+        "explanation": explanation
     }
 
-def ex_fraction_bar_model():
-    denom = random.choice([6, 8, 10, 12])
-    num = random.randint(1, denom - 1)
-    correct = f"{num}/{denom}"
+def ex_perimeter_trap():
+    # rectangle / carré déguisé
+    L = random.randint(5, 20)
+    l = random.randint(3, min(15, L))
+    correct = 2 * (L + l)
+    correct_s = f"{correct} cm"
+
     wrongs = [
-        f"{denom}/{num}",
-        f"{max(1, num-1)}/{denom}",
-        f"{min(denom-1, num+1)}/{denom}",
-        "1/2", "1", "2/3",
+        f"{L + l} cm",
+        f"{L * l} cm",
+        f"{2*L + l} cm",
+        f"{L + 2*l} cm",
+        f"{correct + 2} cm",
+        f"{max(0, correct - 2)} cm",
     ]
-    choices, ans = make_mcq(correct, wrongs, 5)
-
-    def draw(ax):
-        ax.add_patch(Rectangle((0, 0), denom, 1, fill=False, linewidth=2))
-        for i in range(1, denom):
-            ax.plot([i, i], [0, 1], linewidth=1)
-        ax.add_patch(Rectangle((0, 0), num, 1, facecolor="lightgray", edgecolor="none"))
-        ax.set_xlim(-0.5, denom + 0.5)
-        ax.set_ylim(-0.8, 1.8)
-        ax.text(0, 1.25, "Partie coloriée :", fontsize=11)
-        ax.text(0, -0.45, f"{num} parts sur {denom}", fontsize=11)
-
-    explanation = f"La barre a {denom} parts égales, {num} sont coloriées → fraction = {num}/{denom}."
-    return {
-        "topic": "Fractions",
-        "question": "Quelle fraction de la barre est coloriée ? (Lis la fraction sur la figure.)",
-        "choices": choices,
-        "answer_index": ans,
-        "explanation": explanation,
-        "draw": draw,
-    }
-
-def ex_route_perimeter_path():
-    L = random.randint(10, 24)
-    l = random.randint(6, 16)
-    missing = random.choice(["grand", "petit"])
-    if missing == "grand":
-        correct = 2*(L + l) - L
-        miss_txt = f"un côté de {L} m"
-    else:
-        correct = 2*(L + l) - l
-        miss_txt = f"un côté de {l} m"
-
-    correct_s = f"{correct} m"
-    wrongs = [
-        f"{2*(L+l)} m", f"{L+l} m", f"{2*L+2*l} m",
-        f"{2*(L+l)+L} m", f"{abs(2*(L+l)-L-l)} m"
-    ]
+    wrongs = [w for w in wrongs if w != correct_s]
     choices, ans = make_mcq(correct_s, wrongs, 5)
 
-    def draw(ax):
-        ax.add_patch(Rectangle((0, 0), L, l, fill=False, linewidth=2))
-        ax.add_patch(FancyArrowPatch((1, -0.8), (L-1, -0.8), arrowstyle="->", mutation_scale=15, linewidth=2))
-        ax.add_patch(FancyArrowPatch((L+0.8, 1), (L+0.8, l-1), arrowstyle="->", mutation_scale=15, linewidth=2))
-        ax.add_patch(FancyArrowPatch((L-1, l+0.8), (1, l+0.8), arrowstyle="->", mutation_scale=15, linewidth=2))
-        ax.text(L/2 - 1, -0.2, f"{L} m", fontsize=11)
-        ax.text(L+0.2, l/2, f"{l} m", fontsize=11, rotation=90)
-        ax.set_xlim(-2.5, L + 3.0)
-        ax.set_ylim(-2.5, l + 3.0)
-        ax.set_title("Trajet sur 3 côtés", fontsize=11)
-
-    explanation = (
-        f"Périmètre = 2×({L}+{l}) = {2*(L+l)} m.\n"
-        f"On ne parcourt pas {miss_txt}.\n"
-        f"Trajet = {2*(L+l)} − ({L if missing=='grand' else l}) = {correct} m."
-    )
-
+    explanation = f"Périmètre = 2 × (L + l) = 2 × ({L} + {l}) = {correct} cm."
     return {
-        "topic": "Périmètre / trajet",
-        "question": f"On marche le long de 3 côtés d’un rectangle (pas le tour complet). On ne parcourt pas {miss_txt}. Quelle est la longueur du trajet ?",
+        "question": f"Un rectangle a une longueur de {L} cm et une largeur de {l} cm. Quel est son périmètre ?",
         "choices": choices,
         "answer_index": ans,
-        "explanation": explanation,
-        "draw": draw,
+        "explanation": explanation
     }
 
-def ex_div_by_3():
+def ex_area_vs_perimeter_trap():
+    # piège classique: confondre aire / périmètre
+    L = random.randint(6, 16)
+    l = random.randint(3, 10)
+    correct = L * l
+    correct_s = f"{correct} cm²"
+    wrongs = [
+        f"{2*(L+l)} cm²",     # mélange unités
+        f"{2*(L+l)} cm",
+        f"{L+l} cm²",
+        f"{L*l} cm",          # mauvaise unité
+        f"{(L+l)} cm",
+        f"{correct + L} cm²",
+        f"{max(0, correct - l)} cm²",
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = (
+        "Aire d’un rectangle = longueur × largeur.\n"
+        f"Ici : {L} × {l} = {correct} cm²."
+    )
+    return {
+        "question": f"Un rectangle mesure {L} cm sur {l} cm. Quelle est son aire ?",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_divisibility_trap():
+    # “quel nombre est divisible par 3 ?”
+    base = random.randint(100, 999)
+    # fabrique 1 multiple de 3, et 4 non
     def make_div3():
         x = random.randint(100, 999)
         s = sum(map(int, str(x)))
@@ -210,23 +292,136 @@ def ex_div_by_3():
             options.add(x)
     choices_nums = list(options)
     random.shuffle(choices_nums)
+
     choices = [str(x) for x in choices_nums]
     ans = choices_nums.index(correct)
-    explanation = f"Divisible par 3 ⇔ somme des chiffres multiple de 3. Pour {correct}, somme = {sum(map(int, str(correct)))}."
+    explanation = (
+        "Un nombre est divisible par 3 si la somme de ses chiffres est divisible par 3.\n"
+        f"Ici, pour {correct} : somme = {sum(map(int, str(correct)))} (multiple de 3)."
+    )
     return {
-        "topic": "Logique / divisibilité",
         "question": "Quel nombre est divisible par 3 ?",
         "choices": choices,
         "answer_index": ans,
         "explanation": explanation
     }
 
+def ex_pattern_kangourou():
+    # suite “piège” alternée
+    a = random.randint(2, 8)
+    b = random.randint(2, 8)
+    start = random.randint(5, 20)
+    # suite: +a, +b, +a, +b
+    s1 = start
+    s2 = s1 + a
+    s3 = s2 + b
+    s4 = s3 + a
+    correct = s4 + b
+    correct_s = str(correct)
+
+    wrongs = [
+        str(s4 + a),              # répète +a
+        str(s4 + (a + b)),        # ajoute tout
+        str(s4 + (b - 1)),
+        str(s4 + (b + 1)),
+        str(s4 + 2*b),
+        str(s4 + 2*a),
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = (
+        f"La règle alterne +{a} puis +{b}.\n"
+        f"{s1} → {s2} (+{a}) → {s3} (+{b}) → {s4} (+{a}) → {correct} (+{b})."
+    )
+    return {
+        "question": f"Complète la suite : {s1}, {s2}, {s3}, {s4}, ... Quel est le prochain terme ?",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_word_problem_money():
+    # problème simple mais “piège” d’addition/multiplication
+    price = random.choice([3, 4, 5, 6, 7, 8, 9])
+    qty = random.randint(3, 7)
+    pay = random.choice([20, 30, 40])
+    total = price * qty
+    change = pay - total
+    # on force change positif
+    if change <= 0:
+        pay = total + random.choice([5, 10, 20])
+        change = pay - total
+
+    correct_s = f"{change} €"
+    wrongs = [
+        f"{total} €",
+        f"{pay - price} €",
+        f"{pay - qty} €",
+        f"{change + price} €",
+        f"{max(0, change - price)} €",
+        f"{pay} €",
+    ]
+    wrongs = [w for w in wrongs if w != correct_s]
+    choices, ans = make_mcq(correct_s, wrongs, 5)
+
+    explanation = (
+        f"Coût total = {qty} × {price} = {total} €.\n"
+        f"Monnaie rendue = {pay} - {total} = {change} €."
+    )
+    return {
+        "question": f"Un cahier coûte {price} €. Tu en achètes {qty}. Tu payes avec {pay} €. Quelle monnaie te rend-on ?",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
+def ex_fraction_compare():
+    # compare fractions same denom or close; Kangourou aime comparer rapidement
+    denom = random.choice([8, 10, 12, 14])
+    a = random.randint(1, denom - 1)
+    b = random.randint(1, denom - 1)
+    while b == a:
+        b = random.randint(1, denom - 1)
+
+    # question: lequel est plus grand ?
+    fa = a / denom
+    fb = b / denom
+    correct = f"{a}/{denom}" if fa > fb else f"{b}/{denom}"
+
+    choices = [
+        f"{a}/{denom}",
+        f"{b}/{denom}",
+        "Ils sont égaux",
+        f"{denom}/{a}",  # piège inversion
+        f"{denom}/{b}",
+    ]
+    ans = choices.index(correct)
+    explanation = (
+        f"Les deux fractions ont le même dénominateur ({denom}).\n"
+        "Celle qui a le plus grand numérateur est la plus grande.\n"
+        f"Ici : {a} et {b} → la plus grande est {correct}."
+    )
+    return {
+        "question": f"Quelle fraction est la plus grande ?",
+        "choices": choices,
+        "answer_index": ans,
+        "explanation": explanation
+    }
+
 EXERCISES = [
-    ex_grid_area_missing,
-    ex_triangle_angle_with_extension,
-    ex_fraction_bar_model,
-    ex_route_perimeter_path,
-    ex_div_by_3,
+    ex_trap_addition,
+    ex_logic_odd_even,
+    ex_fraction_of_number,
+    ex_conversion_cm_mm,
+    ex_time_trap,
+    ex_angles_triangle,
+    ex_perimeter_trap,
+    ex_area_vs_perimeter_trap,
+    ex_divisibility_trap,
+    ex_pattern_kangourou,
+    ex_word_problem_money,
+    ex_fraction_compare,
 ]
 
 def new_exercise():
@@ -234,13 +429,12 @@ def new_exercise():
     ex["id"] = random.randint(100000, 999999)
     return ex
 
-def make_bank(n=20):
-    # banque de N exos générés une fois (fixés) + corrigés
-    return [new_exercise() for _ in range(n)]
+# ============================================================
+# Gestion session: série, chrono, score
+# ============================================================
 
-# ============================================================
-# Partie (série)
-# ============================================================
+SERIE_LEN = 10
+DURATION_SEC = 20 * 60  # 20 minutes
 
 def reset_game():
     st.session_state.game_started = False
@@ -260,6 +454,7 @@ def remaining_seconds():
     return max(0, int(DURATION_SEC - elapsed))
 
 def finish_if_needed():
+    # fin si chrono à 0 ou 10 questions faites
     if remaining_seconds() <= 0:
         st.session_state.finished = True
     if st.session_state.question_idx >= SERIE_LEN:
@@ -270,183 +465,152 @@ def finish_if_needed():
 # ============================================================
 
 st.set_page_config(page_title="Kangourou 6e — Agent IA", page_icon="🦘", layout="centered")
-st.title("🦘 Kangourou 6e — Agent IA (Série + Banque corrigée)")
 
+st.title("🦘 Agent IA — Kangourou (niveau 6e)")
+st.caption("Série de 10 questions • QCM (A–E) • Correction expliquée • Chrono 20 min")
+
+# init state
 if "game_started" not in st.session_state:
     reset_game()
-if "bank" not in st.session_state:
-    st.session_state.bank = make_bank(n=20)
 
-tab1, tab2 = st.tabs(["🎮 Série (10 questions)", "📚 Banque + corrigés"])
+# Bandeau haut: chrono + progression
+top1, top2, top3 = st.columns([1.2, 1, 1])
 
-# ----------------------------
-# TAB 1 : Série
-# ----------------------------
-with tab1:
-    st.caption("Série 10 questions • QCM A–E • Correction • Chrono 20 min")
+with top1:
+    st.metric("Progression", f"{min(st.session_state.question_idx, SERIE_LEN)} / {SERIE_LEN}")
+with top2:
+    st.metric("Score", f"{st.session_state.score}")
+with top3:
+    r = remaining_seconds()
+    st.metric("Temps restant", f"{r//60:02d}:{r%60:02d}")
 
-    top1, top2, top3 = st.columns([1.2, 1, 1])
-    with top1:
-        st.metric("Progression", f"{min(st.session_state.question_idx, SERIE_LEN)} / {SERIE_LEN}")
-    with top2:
-        st.metric("Score", f"{st.session_state.score}")
-    with top3:
-        r = remaining_seconds()
-        st.metric("Temps restant", f"{r//60:02d}:{r%60:02d}")
+st.divider()
 
-    st.divider()
-
-    if not st.session_state.game_started:
-        st.subheader("Prêt ?")
-        st.write("Clique **Démarrer** : tu as **20 minutes** pour faire **10 questions**.")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("▶️ Démarrer", use_container_width=True):
-                st.session_state.game_started = True
-                st.session_state.start_time = time.time()
-                st.rerun()
-        with c2:
-            if st.button("🧹 Réinitialiser", use_container_width=True):
-                reset_game()
-                st.rerun()
-
-        st.info("Le chrono se met à jour à chaque interaction (normal sur Streamlit).")
-        st.stop()
-
-    finish_if_needed()
-
-    if st.session_state.finished:
-        st.subheader("🏁 Série terminée")
-        reason = "⏱️ Temps écoulé" if remaining_seconds() <= 0 else "✅ 10 questions complétées"
-        st.write(reason)
-        done = min(st.session_state.question_idx, SERIE_LEN)
-        st.success(f"Score final : **{st.session_state.score} / {done}**")
-
-        a, b = st.columns(2)
-        with a:
-            if st.button("🔁 Rejouer", use_container_width=True):
-                reset_game()
-                st.rerun()
-        with b:
-            if st.button("⏹️ Accueil", use_container_width=True):
-                reset_game()
-                st.rerun()
-        st.stop()
-
-    if remaining_seconds() <= 0:
-        st.session_state.finished = True
-        st.rerun()
-
-    ex = st.session_state.exercise
-
-    st.subheader(f"Question {st.session_state.question_idx + 1}")
-    st.write(ex["question"])
-
-    if "draw" in ex and callable(ex["draw"]):
-        fig, ax = fig_base()
-        ex["draw"](ax)
-        st.pyplot(fig, clear_figure=True)
-
-    st.write("**Choisis une réponse :**")
-    btn_cols = st.columns(5)
-    for i in range(5):
-        with btn_cols[i]:
-            if st.button(
-                f"{LABELS[i]}",
-                key=f"pick_{ex['id']}_{i}",
-                disabled=st.session_state.answered,
-                use_container_width=True
-            ):
-                st.session_state.selected = i
-                st.session_state.answered = True
-                correct_i = ex["answer_index"]
-                if i == correct_i:
-                    st.session_state.score += 1
-                    st.session_state.last_feedback = ("ok", f"✅ Bonne réponse : {LABELS[correct_i]}")
-                else:
-                    st.session_state.last_feedback = ("ko", f"❌ Faux. Bonne réponse : {LABELS[correct_i]}")
-                st.rerun()
-
-    st.markdown("**Propositions :**")
-    for i, choice in enumerate(ex["choices"]):
-        st.write(f"- **{LABELS[i]}** : {choice}")
-
-    if st.session_state.answered:
-        kind, msg = st.session_state.last_feedback if st.session_state.last_feedback else ("", "")
-        (st.success if kind == "ok" else st.error)(msg)
-
-        correct_i = ex["answer_index"]
-        st.info(f"Réponse : **{LABELS[correct_i]}** — {ex['choices'][correct_i]}")
-
-        with st.expander("Voir la correction expliquée", expanded=True):
-            st.markdown("**Correction**")
-            st.write(ex["explanation"])
-
-        st.divider()
-        c1, c2, c3 = st.columns(3)
-
-        with c1:
-            if st.button("🔁 Refaire (sans compter)", use_container_width=True):
-                st.session_state.answered = False
-                st.session_state.selected = None
-                st.session_state.last_feedback = None
-                st.rerun()
-
-        with c2:
-            if st.button("➡️ Suivant", use_container_width=True):
-                st.session_state.question_idx += 1
-                st.session_state.exercise = new_exercise()
-                st.session_state.answered = False
-                st.session_state.selected = None
-                st.session_state.last_feedback = None
-                finish_if_needed()
-                st.rerun()
-
-        with c3:
-            if st.button("🧹 Reset série", use_container_width=True):
-                reset_game()
-                st.rerun()
-    else:
-        st.warning("Clique sur A–E pour répondre.")
-
-# ----------------------------
-# TAB 2 : Banque + corrigés
-# ----------------------------
-with tab2:
-    st.caption("Une banque d’exercices “style Kangourou 6e” + corrigés. (Générée à la volée, puis fixée tant que tu ne régénères pas.)")
-
-    left, right = st.columns([1, 1])
-    with left:
-        if st.button("🔄 Régénérer la banque (20 exos)"):
-            st.session_state.bank = make_bank(n=20)
+# Écran d'accueil
+if not st.session_state.game_started:
+    st.subheader("Prêt ?")
+    st.write("Clique sur **Démarrer** : tu as **20 minutes** pour faire **10 questions**.")
+    cols = st.columns([1, 1])
+    with cols[0]:
+        if st.button("▶️ Démarrer", use_container_width=True):
+            st.session_state.game_started = True
+            st.session_state.start_time = time.time()
+            st.session_state.finished = False
             st.rerun()
-    with right:
-        show_solutions = st.toggle("Afficher les corrigés", value=False)
+    with cols[1]:
+        if st.button("🧹 Réinitialiser", use_container_width=True):
+            reset_game()
+            st.rerun()
+
+    st.info("Astuce : le chrono se met à jour à chaque clic. (C’est normal sur Streamlit.)")
+    st.stop()
+
+# Vérifie fin
+finish_if_needed()
+
+# Écran fin
+if st.session_state.finished:
+    st.subheader("🏁 Série terminée")
+    r = remaining_seconds()
+    reason = "⏱️ Temps écoulé" if r <= 0 else "✅ 10 questions complétées"
+    st.write(reason)
+    st.success(f"Ton score final : **{st.session_state.score} / {min(st.session_state.question_idx, SERIE_LEN)}**")
+
+    colA, colB = st.columns([1, 1])
+    with colA:
+        if st.button("🔁 Rejouer une série (10 questions)", use_container_width=True):
+            reset_game()
+            st.rerun()
+    with colB:
+        if st.button("⏹️ Revenir à l’accueil", use_container_width=True):
+            reset_game()
+            st.rerun()
+
+    st.stop()
+
+# Si le chrono est à 0 au milieu d’une question
+if remaining_seconds() <= 0:
+    st.session_state.finished = True
+    st.rerun()
+
+# Question courante
+ex = st.session_state.exercise
+
+st.subheader(f"Question {st.session_state.question_idx + 1}")
+st.write(ex["question"])
+
+st.write("**Choisis une réponse :**")
+
+# Boutons de réponses A–E
+btn_cols = st.columns(5)
+for i in range(5):
+    with btn_cols[i]:
+        if st.button(
+            f"{LABELS[i]}",
+            key=f"pick_{ex['id']}_{i}",
+            disabled=st.session_state.answered,
+            use_container_width=True
+        ):
+            st.session_state.selected = i
+            st.session_state.answered = True
+
+            correct_i = ex["answer_index"]
+            if i == correct_i:
+                st.session_state.score += 1
+                st.session_state.last_feedback = ("ok", f"✅ Bonne réponse : {LABELS[correct_i]}")
+            else:
+                st.session_state.last_feedback = ("ko", f"❌ Faux. La bonne réponse est {LABELS[correct_i]}")
+
+            st.rerun()
+
+# Affiche les choix (lisibles)
+st.markdown("**Propositions :**")
+for i, choice in enumerate(ex["choices"]):
+    st.write(f"- **{LABELS[i]}** : {choice}")
+
+# Feedback + correction
+if st.session_state.answered:
+    kind, msg = st.session_state.last_feedback if st.session_state.last_feedback else ("", "")
+    if kind == "ok":
+        st.success(msg)
+    else:
+        st.error(msg)
+
+    correct_i = ex["answer_index"]
+    st.info(f"Réponse : **{LABELS[correct_i]}** — {ex['choices'][correct_i]}")
+
+    with st.expander("Voir la correction expliquée", expanded=True):
+        st.markdown("**Correction**")
+        st.write(ex["explanation"])
 
     st.divider()
 
-    # Affichage par thèmes
-    topics = {}
-    for ex in st.session_state.bank:
-        topics.setdefault(ex.get("topic", "Autres"), []).append(ex)
+    col1, col2, col3 = st.columns([1, 1, 1])
 
-    for topic, exos in topics.items():
-        st.subheader(f"📌 {topic}")
-        for idx, ex in enumerate(exos, start=1):
-            with st.expander(f"Exercice {idx} — {ex['question'][:60]}..."):
-                st.write(ex["question"])
+    with col1:
+        if st.button("🔁 Refaire (sans compter)", use_container_width=True):
+            st.session_state.answered = False
+            st.session_state.selected = None
+            st.session_state.last_feedback = None
+            st.rerun()
 
-                if "draw" in ex and callable(ex["draw"]):
-                    fig, ax = fig_base()
-                    ex["draw"](ax)
-                    st.pyplot(fig, clear_figure=True)
+    with col2:
+        if st.button("➡️ Suivant", use_container_width=True):
+            st.session_state.question_idx += 1
+            st.session_state.exercise = new_exercise()
+            st.session_state.answered = False
+            st.session_state.selected = None
+            st.session_state.last_feedback = None
+            finish_if_needed()
+            st.rerun()
 
-                st.markdown("**Propositions :**")
-                for i, choice in enumerate(ex["choices"]):
-                    st.write(f"- **{LABELS[i]}** : {choice}")
+    with col3:
+        if st.button("🧹 Reset série", use_container_width=True):
+            reset_game()
+            st.rerun()
 
-                if show_solutions:
-                    correct_i = ex["answer_index"]
-                    st.success(f"✅ Réponse : {LABELS[correct_i]} — {ex['choices'][correct_i]}")
-                    st.markdown("**Correction**")
-                    st.write(ex["explanation"])
+else:
+    st.warning("Réponds en cliquant sur A, B, C, D ou E.")
+
+st.divider()
+st.caption("Contenu : logique + géométrie + calcul + conversions + problèmes (niveau 6e, style Kangourou).")
