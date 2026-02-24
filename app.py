@@ -330,7 +330,7 @@ def finish_if_needed():
 # UI
 # ============================================================
 
-st.set_page_config(page_title="Kangourou 6e — Coucou Camille", page_icon="🦘", layout="centered")
+st.set_page_config(page_title="Kangourou 6e — Agent IA (images)", page_icon="🦘", layout="centered")
 
 st.title("🦘 Agent IA — Kangourou 6e (problèmes + images)")
 st.caption("Série 10 questions • QCM A–E • Correction • Chrono 20 min • Schémas générés")
